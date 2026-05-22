@@ -1,0 +1,446 @@
+---
+import BaseLayout from "../../../layouts/BaseLayout.astro";
+const { codigo } = Astro.params;
+---
+<BaseLayout title={`Lista ${codigo || ""} - Casino Moments`}>
+  <main class="page party-page">
+    <section class="party-shell">
+      <header class="party-header">
+        <div class="brand-row compact">
+          <div class="brand-icon small">
+            <img src="/logo.png" alt="Casino Moments" />
+          </div>
+          <div>
+            <p class="eyebrow">Casino Moments</p>
+            <h1>Mi lista de invitados</h1>
+          </div>
+        </div>
+        <a class="btn secondary" href="/">Cambiar ID</a>
+      </header>
+
+      <section class="event-strip">
+        <div>
+          <span>ID de fiesta</span>
+          <strong id="codigoActual">{codigo}</strong>
+        </div>
+        <div>
+          <span>Registros</span>
+          <strong id="totalRegistros">0</strong>
+        </div>
+        <div>
+          <span>Total personas</span>
+          <strong id="totalPersonas">0</strong>
+        </div>
+      </section>
+
+      <section id="estado" class="message hidden"></section>
+
+      <section id="contenidoFiesta" class="party-grid hidden">
+        <article class="panel form-panel">
+          <div class="section-heading">
+            <span class="gold-line"></span>
+            <h2>Agregar a lista</h2>
+            <p>Registra el nombre de la familia o responsable y cuántos invitados llevará.</p>
+          </div>
+
+          <form class="form" id="formInvitado">
+            <label class="field">
+              <span>Nombre de la familia o responsable</span>
+              <input class="input" name="nombre" placeholder="Ej. Familia Martínez" required />
+            </label>
+
+            <label class="field">
+              <span>Número de teléfono</span>
+              <input class="input" name="telefono" placeholder="Ej. 8711234567" inputmode="tel" />
+            </label>
+
+            <label class="field">
+              <span>¿Cuántos invitados llevará?</span>
+              <input class="input" name="cantidad_invitados" type="number" min="1" value="1" required />
+            </label>
+
+            <label class="field hidden" id="campoMesa">
+              <span>Mesa donde irá la persona</span>
+              <select class="input" name="mesa_id" id="selectMesa"></select>
+            </label>
+
+            <button class="btn full" type="submit">Agregar a lista</button>
+            <div class="message" id="msgInvitado"></div>
+          </form>
+        </article>
+
+        <article class="panel admin-mesas-panel" id="panelAltaMesas">
+          <div class="section-heading">
+            <span class="gold-line"></span>
+            <h2>Alta de mesas</h2>
+            <p>Para crear o aumentar mesas se requiere código administrador.</p>
+          </div>
+
+          <form class="form" id="formAltaMesas">
+            <label class="field">
+              <span>Código administrador</span>
+              <input class="input" name="admin_mesas_code" type="password" placeholder="Código administrador" inputmode="numeric" autocomplete="off" required />
+            </label>
+
+            <label class="field">
+              <span>Número de mesas</span>
+              <input class="input" name="cantidad_mesas" id="cantidadMesasAdmin" type="number" min="1" max="120" value="12" required />
+            </label>
+
+            <label class="field">
+              <span>Número de personas por mesa</span>
+              <input class="input" name="capacidad_por_mesa" id="capacidadPorMesaAdmin" type="number" min="1" max="50" value="10" required />
+            </label>
+
+            <button class="btn full" type="submit">Guardar mesas</button>
+            <button class="btn danger full" id="btnEliminarTodasMesas" type="button">Eliminar todas las mesas de la BD</button>
+            <div class="message" id="msgAltaMesas"></div>
+          </form>
+        </article>
+
+
+        <article class="panel list-panel">
+          <div class="tools-card public-tools">
+            <label class="field">
+              <span>Buscar en mi lista</span>
+              <input class="input" id="buscador" type="search" placeholder="Nombre, familia, teléfono o mesa" />
+            </label>
+          </div>
+
+          <section id="listaContenedor" class="list-container"></section>
+        </article>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const codigo = String(document.querySelector("#codigoActual").textContent || "").trim().toUpperCase();
+    const estado = document.querySelector("#estado");
+    const contenidoFiesta = document.querySelector("#contenidoFiesta");
+    const totalRegistros = document.querySelector("#totalRegistros");
+    const totalPersonas = document.querySelector("#totalPersonas");
+    const formInvitado = document.querySelector("#formInvitado");
+    const msgInvitado = document.querySelector("#msgInvitado");
+    const campoMesa = document.querySelector("#campoMesa");
+    const selectMesa = document.querySelector("#selectMesa");
+    const buscador = document.querySelector("#buscador");
+    const listaContenedor = document.querySelector("#listaContenedor");
+    const formAltaMesas = document.querySelector("#formAltaMesas");
+    const msgAltaMesas = document.querySelector("#msgAltaMesas");
+    const cantidadMesasAdmin = document.querySelector("#cantidadMesasAdmin");
+    const capacidadPorMesaAdmin = document.querySelector("#capacidadPorMesaAdmin");
+    const btnEliminarTodasMesas = document.querySelector("#btnEliminarTodasMesas");
+
+    let fiestaActual = null;
+    let invitadosActuales = [];
+    let mesasActuales = [];
+
+    function setMessage(element, text, type) {
+      element.textContent = text;
+      element.className = `message ${type || ""}`;
+      element.classList.toggle("hidden", !text);
+    }
+
+    function limpiarTexto(value) {
+      return String(value || "").trim();
+    }
+
+    function obtenerCantidad(item) {
+      return Number(item.cantidad_invitados || 0);
+    }
+
+    function numeroMesa(mesa) {
+      return Number(String(mesa?.nombre || "").match(/\d+/)?.[0] || 0);
+    }
+
+    function ordenarMesas(mesas) {
+      return [...mesas].sort((a, b) => {
+        const numeroA = numeroMesa(a);
+        const numeroB = numeroMesa(b);
+
+        if (numeroA && numeroB) {
+          return numeroA - numeroB;
+        }
+
+        return String(a.nombre || "").localeCompare(String(b.nombre || ""), "es");
+      });
+    }
+
+    function actualizarTotales() {
+      totalRegistros.textContent = String(invitadosActuales.length);
+      totalPersonas.textContent = String(invitadosActuales.reduce((suma, item) => suma + obtenerCantidad(item), 0));
+    }
+
+    async function cargarFiesta() {
+      setMessage(estado, "Cargando lista...", "");
+
+      try {
+        const response = await fetch(`/api/fiestas/${encodeURIComponent(codigo)}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error(data.message || "No se pudo cargar la lista");
+        }
+
+        fiestaActual = data.fiesta;
+        invitadosActuales = Array.isArray(data.invitados) ? data.invitados : [];
+        mesasActuales = ordenarMesas(Array.isArray(data.mesas) ? data.mesas : []);
+
+        contenidoFiesta.classList.remove("hidden");
+        setMessage(estado, "", "");
+        configurarMesas();
+        actualizarTotales();
+        renderizarLista();
+      } catch (error) {
+        contenidoFiesta.classList.add("hidden");
+        setMessage(estado, error.message || "No se pudo cargar la lista", "error");
+      }
+    }
+
+    function configurarMesas() {
+      const tieneMesas = mesasActuales.length > 0;
+      campoMesa.classList.toggle("hidden", !tieneMesas);
+      cantidadMesasAdmin.value = String(Math.max(mesasActuales.length || 12, 1));
+      const primeraMesaConCapacidad = mesasActuales.find((mesa) => Number(mesa.capacidad || 0) > 0);
+      capacidadPorMesaAdmin.value = String(Number(primeraMesaConCapacidad?.capacidad || 10));
+
+      selectMesa.innerHTML = "";
+
+      const optionEmpty = document.createElement("option");
+      optionEmpty.value = "";
+      optionEmpty.textContent = "Sin mesa asignada";
+      selectMesa.append(optionEmpty);
+
+      for (const mesa of mesasActuales) {
+        const option = document.createElement("option");
+        option.value = mesa.id;
+        const capacidad = Number(mesa.capacidad || 0);
+        option.textContent = capacidad > 0 ? `${mesa.nombre} - ${capacidad} personas` : mesa.nombre;
+        selectMesa.append(option);
+      }
+
+    }
+
+    function obtenerFiltrados() {
+      const q = limpiarTexto(buscador.value).toLowerCase();
+
+      if (!q) {
+        return invitadosActuales;
+      }
+
+      return invitadosActuales.filter((invitado) => {
+        const texto = [
+          invitado.nombre,
+          invitado.telefono,
+          invitado.cantidad_invitados,
+          invitado.mesa_nombre
+        ].join(" ").toLowerCase();
+
+        return texto.includes(q);
+      });
+    }
+
+    function crearFila(invitado) {
+      const row = document.createElement("div");
+      row.className = "guest-row";
+
+      const avatar = document.createElement("div");
+      avatar.className = "guest-avatar";
+      avatar.setAttribute("aria-hidden", "true");
+
+      const info = document.createElement("div");
+      info.className = "guest-info";
+
+      const name = document.createElement("strong");
+      name.textContent = invitado.nombre || "Sin nombre";
+
+      const meta = document.createElement("p");
+      const telefono = invitado.telefono || "Sin teléfono";
+      const mesa = invitado.mesa_nombre ? ` · ${invitado.mesa_nombre}` : "";
+      meta.textContent = `${telefono} · ${obtenerCantidad(invitado)} invitado(s)${mesa}`;
+
+      const actions = document.createElement("div");
+      actions.className = "guest-actions";
+
+      const btnEliminar = document.createElement("button");
+      btnEliminar.type = "button";
+      btnEliminar.className = "btn-delete-guest";
+      btnEliminar.textContent = "Eliminar";
+      btnEliminar.addEventListener("click", () => eliminarInvitado(invitado));
+
+      info.append(name, meta);
+      actions.append(btnEliminar);
+      row.append(avatar, info, actions);
+      return row;
+    }
+
+    async function eliminarInvitado(invitado) {
+      const nombre = invitado?.nombre || "este invitado";
+
+      if (!confirm(`¿Eliminar ${nombre} de la lista?`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/fiestas/${encodeURIComponent(codigo)}/invitados`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: invitado.id })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo eliminar el invitado");
+        }
+
+        await cargarFiesta();
+      } catch (error) {
+        setMessage(estado, error.message || "No se pudo eliminar el invitado", "error");
+      }
+    }
+
+    function renderizarLista() {
+      const invitados = obtenerFiltrados();
+      listaContenedor.innerHTML = "";
+
+      if (!invitados.length) {
+        const empty = document.createElement("section");
+        empty.className = "empty-card";
+        empty.textContent = "Aún no hay invitados o no hay coincidencias.";
+        listaContenedor.append(empty);
+        return;
+      }
+
+      const card = document.createElement("section");
+      card.className = "group-card";
+
+      const header = document.createElement("div");
+      header.className = "group-header";
+
+      const title = document.createElement("h2");
+      title.textContent = mesasActuales.length ? "Lista de invitados" : "Lista general";
+
+      const total = document.createElement("span");
+      total.textContent = `${invitados.reduce((suma, item) => suma + obtenerCantidad(item), 0)} personas`;
+
+      header.append(title, total);
+      card.append(header);
+
+      for (const invitado of invitados) {
+        card.append(crearFila(invitado));
+      }
+
+      listaContenedor.append(card);
+    }
+
+    formInvitado.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setMessage(msgInvitado, "Guardando invitado...", "");
+
+      const formData = new FormData(formInvitado);
+      const payload = {
+        nombre: limpiarTexto(formData.get("nombre")),
+        telefono: limpiarTexto(formData.get("telefono")),
+        cantidad_invitados: Number(formData.get("cantidad_invitados") || 1),
+        mesa_id: limpiarTexto(formData.get("mesa_id"))
+      };
+
+      try {
+        const response = await fetch(`/api/fiestas/${encodeURIComponent(codigo)}/invitados`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo agregar a la lista");
+        }
+
+        formInvitado.reset();
+        formInvitado.cantidad_invitados.value = "1";
+        setMessage(msgInvitado, "Agregado correctamente", "success");
+        await cargarFiesta();
+      } catch (error) {
+        setMessage(msgInvitado, error.message || "No se pudo agregar a la lista", "error");
+      }
+    });
+
+    formAltaMesas.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setMessage(msgAltaMesas, "Guardando mesas...", "");
+
+      const formData = new FormData(formAltaMesas);
+      const payload = {
+        admin_mesas_code: limpiarTexto(formData.get("admin_mesas_code")),
+        cantidad_mesas: Number(formData.get("cantidad_mesas") || 0),
+        capacidad_por_mesa: Number(formData.get("capacidad_por_mesa") || 0)
+      };
+
+      try {
+        const response = await fetch(`/api/fiestas/${encodeURIComponent(codigo)}/mesas`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron guardar las mesas");
+        }
+
+        setMessage(msgAltaMesas, result.message || "Mesas guardadas correctamente", "success");
+        formAltaMesas.admin_mesas_code.value = "";
+        await cargarFiesta();
+      } catch (error) {
+        setMessage(msgAltaMesas, error.message || "No se pudieron guardar las mesas", "error");
+      }
+    });
+
+    btnEliminarTodasMesas.addEventListener("click", async () => {
+      const codigoAdminInput = formAltaMesas.admin_mesas_code;
+      const adminCode = limpiarTexto(codigoAdminInput.value);
+
+      if (!adminCode) {
+        setMessage(msgAltaMesas, "Escribe el código administrador para eliminar todas las mesas", "error");
+        codigoAdminInput.focus();
+        return;
+      }
+
+      if (!confirm("¿Seguro que quieres eliminar todas las mesas de esta fiesta? También se eliminarán los invitados de la lista.")) {
+        return;
+      }
+
+      setMessage(msgAltaMesas, "Eliminando todas las mesas...", "");
+
+      try {
+        const response = await fetch(`/api/fiestas/${encodeURIComponent(codigo)}/mesas`, {
+          method: "DELETE",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            admin_mesas_code: adminCode,
+            eliminar_todas: true
+          })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudieron eliminar las mesas");
+        }
+
+        setMessage(msgAltaMesas, result.message || "Mesas eliminadas correctamente", "success");
+        codigoAdminInput.value = "";
+        await cargarFiesta();
+      } catch (error) {
+        setMessage(msgAltaMesas, error.message || "No se pudieron eliminar las mesas", "error");
+      }
+    });
+
+    buscador.addEventListener("input", renderizarLista);
+    cargarFiesta();
+  </script>
+</BaseLayout>

@@ -1,0 +1,272 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+<BaseLayout title="Casino Moments Lista">
+  <main class="page public-home">
+    <section class="home-card">
+      <div class="home-content">
+        <div class="brand-row">
+          <div class="brand-icon">
+            <img src="/logo.png" alt="Casino Moments" />
+          </div>
+          <div>
+            <p class="eyebrow">Casino Moments</p>
+            <h1>Lista de invitados</h1>
+          </div>
+        </div>
+
+        <div class="intro-copy">
+          <span class="gold-line"></span>
+          <h2>Crear fiesta</h2>
+          <p>Genera tu ID de fiesta para empezar tu lista de invitados.</p>
+        </div>
+
+        <div class="notice">
+          Recuerda anotar tu ID de fiesta y pasarlo al Casino Moments. Cada vez que salgas de la página tendrás que introducir tu ID para cargar tu lista.
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" type="button" data-tab="crear">Crear fiesta</button>
+          <button class="tab" type="button" data-tab="cargar">Ya tengo ID</button>
+        </div>
+
+        <section class="tab-panel show" id="tabCrear">
+          <form class="form" id="formFiesta">
+            <label class="check big-check">
+              <input id="usaMesas" type="checkbox" name="usa_mesas" />
+              <span>Esta fiesta tendrá mesas asignadas</span>
+            </label>
+
+            <div class="admin-mesas-box hidden" id="adminMesasCrear">
+              <label class="field">
+                <span>Código administrador</span>
+                <input class="input" id="adminMesasCode" name="admin_mesas_code" type="password" placeholder="Código administrador" inputmode="numeric" autocomplete="off" />
+              </label>
+
+              <label class="field">
+                <span>Número de mesas</span>
+                <input class="input" id="cantidadMesas" name="cantidad_mesas" type="number" min="1" max="120" value="10" />
+              </label>
+
+              <label class="field">
+                <span>Número de personas por mesa</span>
+                <input class="input" id="capacidadPorMesa" name="capacidad_por_mesa" type="number" min="1" max="50" value="5" />
+              </label>
+            </div>
+
+            <button class="btn full" id="btnCrearFiesta" type="submit">Crear fiesta y generar ID</button>
+            <div class="message" id="msgFiesta"></div>
+          </form>
+
+          <div class="result" id="resultadoFiesta">
+            <strong>Tu ID de fiesta es:</strong>
+            <div class="code-box">
+              <span id="codigoFiesta"></span>
+              <button class="btn secondary" id="btnCopiar" type="button">Copiar</button>
+            </div>
+            <p id="resumenMesas"></p>
+            <p>Guarda este ID. Cuando regreses tendrás que escribirlo para cargar tu lista.</p>
+            <div class="actions">
+              <a class="btn" id="linkFiesta" href="#">Abrir mi lista</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="tabCargar">
+          <form class="form" id="formCargar">
+            <label class="field">
+              <span>Introduce tu ID de fiesta</span>
+              <input class="input code-input" name="codigo" placeholder="CM-8F4K2" required />
+            </label>
+            <button class="btn full" type="submit">Cargar mi lista</button>
+            <div class="message" id="msgCargar"></div>
+          </form>
+        </section>
+      </div>
+
+      <aside class="home-visual">
+        <div class="visual-glow"></div>
+        <div class="logo-frame">
+          <img src="/logo.png" alt="Casino Moments" />
+        </div>
+        <div class="visual-text">
+          <p>Control elegante para tus invitados</p>
+          <strong>Casino Moments</strong>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const tabs = document.querySelectorAll(".tab");
+    const tabCrear = document.querySelector("#tabCrear");
+    const tabCargar = document.querySelector("#tabCargar");
+    const formFiesta = document.querySelector("#formFiesta");
+    const formCargar = document.querySelector("#formCargar");
+    const msgFiesta = document.querySelector("#msgFiesta");
+    const msgCargar = document.querySelector("#msgCargar");
+    const resultadoFiesta = document.querySelector("#resultadoFiesta");
+    const codigoFiesta = document.querySelector("#codigoFiesta");
+    const linkFiesta = document.querySelector("#linkFiesta");
+    const btnCopiar = document.querySelector("#btnCopiar");
+    const btnCrearFiesta = document.querySelector("#btnCrearFiesta");
+    const usaMesas = document.querySelector("#usaMesas");
+    const adminMesasCrear = document.querySelector("#adminMesasCrear");
+    const adminMesasCode = document.querySelector("#adminMesasCode");
+    const cantidadMesas = document.querySelector("#cantidadMesas");
+    const capacidadPorMesa = document.querySelector("#capacidadPorMesa");
+    const resumenMesas = document.querySelector("#resumenMesas");
+
+    function setTab(name) {
+      tabs.forEach((tab) => {
+        tab.classList.toggle("active", tab.dataset.tab === name);
+      });
+
+      tabCrear.classList.toggle("show", name === "crear");
+      tabCargar.classList.toggle("show", name === "cargar");
+    }
+
+    function setMessage(element, text, type = "") {
+      element.textContent = text;
+      element.className = `message ${type}`;
+      element.classList.toggle("hidden", !text);
+    }
+
+    function cleanCode(value) {
+      return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function safeNumber(value) {
+      const number = Number(value || 0);
+      return Number.isFinite(number) ? Math.trunc(number) : 0;
+    }
+
+    function actualizarCampoMesas() {
+      const activo = usaMesas.checked;
+      adminMesasCrear.classList.toggle("hidden", !activo);
+      adminMesasCode.required = activo;
+      cantidadMesas.required = activo;
+      capacidadPorMesa.required = activo;
+    }
+
+    async function leerJson(response) {
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error("La API regresó una respuesta inválida. Revisa la terminal de Astro.");
+      }
+
+      return await response.json();
+    }
+
+    function obtenerMensajeError(error) {
+      return error instanceof Error ? error.message : "Ocurrió un error inesperado";
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => setTab(tab.dataset.tab));
+    });
+
+    usaMesas.addEventListener("change", actualizarCampoMesas);
+    actualizarCampoMesas();
+
+    formFiesta.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setMessage(msgFiesta, "Generando ID...", "");
+      resultadoFiesta.classList.remove("show");
+      btnCrearFiesta.disabled = true;
+      btnCrearFiesta.textContent = "Generando...";
+
+      const formData = new FormData(formFiesta);
+      const usaMesasActivas = formData.get("usa_mesas") === "on";
+      const numeroMesas = safeNumber(formData.get("cantidad_mesas"));
+      const personasPorMesa = safeNumber(formData.get("capacidad_por_mesa"));
+      const adminCode = String(formData.get("admin_mesas_code") || "").trim();
+
+      if (usaMesasActivas && !adminCode) {
+        setMessage(msgFiesta, "Escribe el código administrador", "error");
+        adminMesasCode.focus();
+        btnCrearFiesta.disabled = false;
+        btnCrearFiesta.textContent = "Crear fiesta y generar ID";
+        return;
+      }
+
+      if (usaMesasActivas && numeroMesas < 1) {
+        setMessage(msgFiesta, "Escribe el número de mesas", "error");
+        cantidadMesas.focus();
+        btnCrearFiesta.disabled = false;
+        btnCrearFiesta.textContent = "Crear fiesta y generar ID";
+        return;
+      }
+
+      if (usaMesasActivas && personasPorMesa < 1) {
+        setMessage(msgFiesta, "Escribe el número de personas por mesa", "error");
+        capacidadPorMesa.focus();
+        btnCrearFiesta.disabled = false;
+        btnCrearFiesta.textContent = "Crear fiesta y generar ID";
+        return;
+      }
+
+      const payload = {
+        usa_mesas: usaMesasActivas,
+        cantidad_mesas: usaMesasActivas ? numeroMesas : 0,
+        capacidad_por_mesa: usaMesasActivas ? personasPorMesa : 0,
+        admin_mesas_code: usaMesasActivas ? adminCode : ""
+      };
+
+      try {
+        const response = await fetch("/api/fiestas", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await leerJson(response);
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo generar el ID");
+        }
+
+        const codigo = result.fiesta.codigo;
+        codigoFiesta.textContent = codigo;
+        linkFiesta.href = `/fiesta/${encodeURIComponent(codigo)}`;
+        resumenMesas.textContent = result.mesas_creadas ? `Se generaron ${result.mesas_creadas} mesas de ${personasPorMesa} personas.` : "";
+        resultadoFiesta.classList.add("show");
+        setMessage(msgFiesta, "ID generado correctamente", "success");
+      } catch (error) {
+        setMessage(msgFiesta, obtenerMensajeError(error), "error");
+      } finally {
+        btnCrearFiesta.disabled = false;
+        btnCrearFiesta.textContent = "Crear fiesta y generar ID";
+      }
+    });
+
+    formCargar.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const formData = new FormData(formCargar);
+      const codigo = cleanCode(formData.get("codigo"));
+
+      if (!codigo) {
+        setMessage(msgCargar, "Introduce tu ID de fiesta", "error");
+        return;
+      }
+
+      location.href = `/fiesta/${encodeURIComponent(codigo)}`;
+    });
+
+    btnCopiar.addEventListener("click", async () => {
+      const codigo = codigoFiesta.textContent || "";
+
+      try {
+        await navigator.clipboard.writeText(codigo);
+        btnCopiar.textContent = "Copiado";
+      } catch {
+        btnCopiar.textContent = "Copia manual";
+      }
+
+      setTimeout(() => {
+        btnCopiar.textContent = "Copiar";
+      }, 1400);
+    });
+  </script>
+</BaseLayout>
