@@ -1,6 +1,24 @@
 import { supabase } from "../../../../lib/supabaseServer.js";
 import { cleanCode, jsonResponse } from "../../../../lib/http.js";
 
+function obtenerNumeroMesa(nombre) {
+  const match = String(nombre || "").match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function ordenarMesas(mesas) {
+  return [...(mesas || [])].sort((a, b) => {
+    const numeroA = obtenerNumeroMesa(a.nombre);
+    const numeroB = obtenerNumeroMesa(b.nombre);
+
+    if (numeroA && numeroB) {
+      return numeroA - numeroB;
+    }
+
+    return String(a.nombre || "").localeCompare(String(b.nombre || ""), "es");
+  });
+}
+
 export async function GET({ params }) {
   const codigo = cleanCode(params.codigo);
 
@@ -22,19 +40,18 @@ export async function GET({ params }) {
     return jsonResponse({ ok: false, message: "No se encontró una fiesta con ese ID" }, 404);
   }
 
-  const { data: mesas, error: mesasError } = await supabase
+  const { data: mesasData, error: mesasError } = await supabase
     .from("mesas")
-    .select("id, nombre, capacidad, created_at")
-    .eq("fiesta_id", fiesta.id)
-    .order("created_at", { ascending: true });
+    .select("id, fiesta_id, nombre, capacidad, created_at")
+    .eq("fiesta_id", fiesta.id);
 
   if (mesasError) {
     return jsonResponse({ ok: false, message: mesasError.message }, 500);
   }
 
-  const { data: invitados, error: invitadosError } = await supabase
+  const { data: invitadosData, error: invitadosError } = await supabase
     .from("invitados")
-    .select("id, nombre, telefono, cantidad_invitados, mesa_id, asistio, created_at")
+    .select("id, fiesta_id, nombre, telefono, cantidad_invitados, mesa_id, asistio, created_at")
     .eq("fiesta_id", fiesta.id)
     .order("created_at", { ascending: true });
 
@@ -42,32 +59,31 @@ export async function GET({ params }) {
     return jsonResponse({ ok: false, message: invitadosError.message }, 500);
   }
 
-  const mesasOrdenadas = (mesas || []).sort((a, b) => {
-    const numeroA = Number(String(a.nombre || "").match(/\d+/)?.[0] || 0);
-    const numeroB = Number(String(b.nombre || "").match(/\d+/)?.[0] || 0);
+  const mesas = ordenarMesas(mesasData || []);
+  const mapaMesas = new Map(mesas.map((mesa) => [mesa.id, mesa]));
 
-    if (numeroA && numeroB) {
-      return numeroA - numeroB;
-    }
+  const invitados = (invitadosData || []).map((invitado) => {
+    const mesa = invitado.mesa_id ? mapaMesas.get(invitado.mesa_id) : null;
 
-    return String(a.nombre || "").localeCompare(String(b.nombre || ""), "es");
+    return {
+      ...invitado,
+      mesa_nombre: mesa?.nombre || null,
+      mesa_numero: mesa ? obtenerNumeroMesa(mesa.nombre) : null,
+      mesa_capacidad: mesa?.capacidad || null
+    };
   });
 
-  const mesaPorId = new Map(mesasOrdenadas.map((mesa) => [mesa.id, mesa.nombre]));
-  const lista = (invitados || []).map((invitado) => ({
-    ...invitado,
-    mesa_nombre: invitado.mesa_id ? mesaPorId.get(invitado.mesa_id) || null : null
-  }));
-
-  const totalPersonas = lista.reduce((suma, item) => suma + Number(item.cantidad_invitados || 0), 0);
+  const totalPersonas = invitados.reduce((suma, item) => {
+    return suma + Number(item.cantidad_invitados || 0);
+  }, 0);
 
   return jsonResponse({
     ok: true,
     fiesta,
-    mesas: mesasOrdenadas,
-    invitados: lista,
+    mesas,
+    invitados,
     totales: {
-      registros: lista.length,
+      registros: invitados.length,
       personas: totalPersonas
     }
   });

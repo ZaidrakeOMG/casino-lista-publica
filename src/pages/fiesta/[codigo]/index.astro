@@ -114,6 +114,7 @@ const { codigo } = Astro.params;
   </main>
 
   <script>
+    // @ts-nocheck
     const codigo = String(document.querySelector("#codigoActual").textContent || "").trim().toUpperCase();
     const estado = document.querySelector("#estado");
     const contenidoFiesta = document.querySelector("#contenidoFiesta");

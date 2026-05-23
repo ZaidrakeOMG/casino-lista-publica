@@ -1,5 +1,5 @@
 import { supabase } from "../../../../../lib/supabaseServer.js";
-import { jsonResponse } from "../../../../../lib/http.js";
+import { cleanCode, jsonResponse } from "../../../../../lib/http.js";
 
 const ADMIN_CODE = "2525";
 
@@ -10,6 +10,19 @@ function limpiarTexto(valor) {
 function obtenerNumeroMesa(nombre) {
   const match = String(nombre || "").match(/\d+/);
   return match ? Number(match[0]) : 0;
+}
+
+function ordenarMesas(mesas) {
+  return [...(mesas || [])].sort((a, b) => {
+    const numeroA = obtenerNumeroMesa(a.nombre);
+    const numeroB = obtenerNumeroMesa(b.nombre);
+
+    if (numeroA && numeroB) {
+      return numeroA - numeroB;
+    }
+
+    return String(a.nombre || "").localeCompare(String(b.nombre || ""), "es");
+  });
 }
 
 async function buscarFiesta(codigo) {
@@ -26,12 +39,12 @@ async function buscarFiesta(codigo) {
   return data;
 }
 
-function ordenarMesas(mesas) {
-  return (mesas || []).sort((a, b) => obtenerNumeroMesa(a.nombre) - obtenerNumeroMesa(b.nombre));
-}
-
 export async function GET({ params }) {
-  const codigo = limpiarTexto(params.codigo).toUpperCase();
+  const codigo = cleanCode(params.codigo);
+
+  if (!codigo) {
+    return jsonResponse({ ok: false, message: "Falta el ID de fiesta" }, 400);
+  }
 
   try {
     const fiesta = await buscarFiesta(codigo);
@@ -56,7 +69,11 @@ export async function GET({ params }) {
 }
 
 export async function POST({ params, request }) {
-  const codigo = limpiarTexto(params.codigo).toUpperCase();
+  const codigo = cleanCode(params.codigo);
+
+  if (!codigo) {
+    return jsonResponse({ ok: false, message: "Falta el ID de fiesta" }, 400);
+  }
 
   let body;
 
@@ -67,18 +84,18 @@ export async function POST({ params, request }) {
   }
 
   const adminCode = limpiarTexto(body.admin_code || body.admin_mesas_code);
-  const cantidadMesas = Number(body.cantidad_mesas || 0);
-  const capacidad = Number(body.capacidad || body.capacidad_por_mesa || 0);
+  const cantidadMesas = Math.trunc(Number(body.cantidad_mesas || 0));
+  const capacidad = Math.trunc(Number(body.capacidad || body.capacidad_por_mesa || 0));
 
   if (adminCode !== ADMIN_CODE) {
     return jsonResponse({ ok: false, message: "Código administrador incorrecto" }, 401);
   }
 
-  if (!Number.isInteger(cantidadMesas) || cantidadMesas < 1) {
+  if (!Number.isInteger(cantidadMesas) || cantidadMesas < 1 || cantidadMesas > 120) {
     return jsonResponse({ ok: false, message: "El número de mesas no es válido" }, 400);
   }
 
-  if (!Number.isInteger(capacidad) || capacidad < 1) {
+  if (!Number.isInteger(capacidad) || capacidad < 1 || capacidad > 50) {
     return jsonResponse({ ok: false, message: "El número de personas por mesa no es válido" }, 400);
   }
 
@@ -100,9 +117,10 @@ export async function POST({ params, request }) {
 
     const mesas = mesasActuales || [];
     const numerosDeseados = new Set(Array.from({ length: cantidadMesas }, (_, index) => index + 1));
+    const numerosExistentes = new Set();
     const vistos = new Set();
     const idsParaEliminar = [];
-    const numerosExistentes = new Set();
+    const idsParaMantener = [];
 
     for (const mesa of mesas) {
       const numero = obtenerNumeroMesa(mesa.nombre);
@@ -112,6 +130,7 @@ export async function POST({ params, request }) {
       } else {
         vistos.add(numero);
         numerosExistentes.add(numero);
+        idsParaMantener.push(mesa.id);
       }
     }
 
@@ -119,6 +138,7 @@ export async function POST({ params, request }) {
       const { error: errorDeleteInvitados } = await supabase
         .from("invitados")
         .delete()
+        .eq("fiesta_id", fiesta.id)
         .in("mesa_id", idsParaEliminar);
 
       if (errorDeleteInvitados) {
@@ -128,6 +148,7 @@ export async function POST({ params, request }) {
       const { error: errorDeleteMesas } = await supabase
         .from("mesas")
         .delete()
+        .eq("fiesta_id", fiesta.id)
         .in("id", idsParaEliminar);
 
       if (errorDeleteMesas) {
@@ -157,15 +178,12 @@ export async function POST({ params, request }) {
       }
     }
 
-    const idsParaActualizar = mesas
-      .filter((mesa) => !idsParaEliminar.includes(mesa.id))
-      .map((mesa) => mesa.id);
-
-    if (idsParaActualizar.length) {
+    if (idsParaMantener.length) {
       const { error: errorUpdateMesas } = await supabase
         .from("mesas")
         .update({ capacidad })
-        .in("id", idsParaActualizar);
+        .eq("fiesta_id", fiesta.id)
+        .in("id", idsParaMantener);
 
       if (errorUpdateMesas) {
         return jsonResponse({ ok: false, message: errorUpdateMesas.message }, 500);
@@ -190,14 +208,22 @@ export async function POST({ params, request }) {
       return jsonResponse({ ok: false, message: errorFinal.message }, 500);
     }
 
-    return jsonResponse({ ok: true, mesas: ordenarMesas(mesasFinales) });
+    return jsonResponse({
+      ok: true,
+      message: `Se guardaron ${cantidadMesas} mesas correctamente`,
+      mesas: ordenarMesas(mesasFinales)
+    });
   } catch (error) {
     return jsonResponse({ ok: false, message: error.message }, 500);
   }
 }
 
 export async function DELETE({ params, request }) {
-  const codigo = limpiarTexto(params.codigo).toUpperCase();
+  const codigo = cleanCode(params.codigo);
+
+  if (!codigo) {
+    return jsonResponse({ ok: false, message: "Falta el ID de fiesta" }, 400);
+  }
 
   let body;
 
@@ -247,7 +273,12 @@ export async function DELETE({ params, request }) {
       return jsonResponse({ ok: false, message: errorFiesta.message }, 500);
     }
 
-    return jsonResponse({ ok: true, mesas: [], invitados_eliminados: true });
+    return jsonResponse({
+      ok: true,
+      message: "Mesas e invitados eliminados correctamente",
+      mesas: [],
+      invitados_eliminados: true
+    });
   } catch (error) {
     return jsonResponse({ ok: false, message: error.message }, 500);
   }

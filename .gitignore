@@ -1,4 +1,8 @@
 node_modules
 dist
 .env
+.vercel
+.astro
 .DS_Store
+*.zip
+*.rar

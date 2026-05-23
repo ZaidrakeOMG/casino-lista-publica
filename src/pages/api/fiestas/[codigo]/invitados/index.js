@@ -5,11 +5,40 @@ function limpiarTexto(valor) {
   return String(valor || "").trim();
 }
 
+function limpiarId(valor) {
+  const texto = limpiarTexto(valor);
+
+  if (!texto || texto === "null" || texto === "undefined") {
+    return null;
+  }
+
+  return texto;
+}
+
 async function buscarFiesta(codigo) {
   const { data, error } = await supabase
     .from("fiestas")
-    .select("id, usa_mesas")
+    .select("id, codigo, usa_mesas")
     .eq("codigo", codigo)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+async function validarMesaDeFiesta(mesaId, fiestaId) {
+  if (!mesaId) {
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("mesas")
+    .select("id")
+    .eq("id", mesaId)
+    .eq("fiesta_id", fiestaId)
     .maybeSingle();
 
   if (error) {
@@ -36,8 +65,8 @@ export async function POST({ params, request }) {
 
   const nombre = limpiarTexto(body.nombre);
   const telefono = limpiarTexto(body.telefono) || null;
-  const cantidadInvitados = Number(body.cantidad_invitados || 1);
-  const mesaId = limpiarTexto(body.mesa_id) || null;
+  const cantidadInvitados = Math.trunc(Number(body.cantidad_invitados || 1));
+  const mesaId = limpiarId(body.mesa_id);
 
   if (!nombre) {
     return jsonResponse({ ok: false, message: "Escribe el nombre de la familia o responsable" }, 400);
@@ -54,17 +83,27 @@ export async function POST({ params, request }) {
       return jsonResponse({ ok: false, message: "No se encontró una fiesta con ese ID" }, 404);
     }
 
-    const payload = {
-      fiesta_id: fiesta.id,
-      nombre,
-      telefono,
-      cantidad_invitados: cantidadInvitados,
-      mesa_id: fiesta.usa_mesas ? mesaId : null
-    };
+    let mesaFinal = null;
+
+    if (fiesta.usa_mesas && mesaId) {
+      const mesa = await validarMesaDeFiesta(mesaId, fiesta.id);
+
+      if (!mesa) {
+        return jsonResponse({ ok: false, message: "La mesa seleccionada no pertenece a esta fiesta" }, 400);
+      }
+
+      mesaFinal = mesa.id;
+    }
 
     const { data, error } = await supabase
       .from("invitados")
-      .insert(payload)
+      .insert({
+        fiesta_id: fiesta.id,
+        nombre,
+        telefono,
+        cantidad_invitados: cantidadInvitados,
+        mesa_id: mesaFinal
+      })
       .select("id, nombre, telefono, cantidad_invitados, mesa_id, asistio, created_at")
       .maybeSingle();
 
@@ -93,7 +132,7 @@ export async function DELETE({ params, request }) {
     return jsonResponse({ ok: false, message: "Solicitud inválida" }, 400);
   }
 
-  const invitadoId = limpiarTexto(body.id || body.invitado_id);
+  const invitadoId = limpiarId(body.id || body.invitado_id);
 
   if (!invitadoId) {
     return jsonResponse({ ok: false, message: "Falta el invitado a eliminar" }, 400);
@@ -119,7 +158,7 @@ export async function DELETE({ params, request }) {
     }
 
     if (!data) {
-      return jsonResponse({ ok: false, message: "No se encontró el invitado" }, 404);
+      return jsonResponse({ ok: false, message: "No se encontró el invitado en esta fiesta" }, 404);
     }
 
     return jsonResponse({ ok: true, invitado_eliminado: data.id });
