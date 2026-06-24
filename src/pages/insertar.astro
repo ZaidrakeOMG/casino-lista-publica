@@ -1,0 +1,148 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="Admin - Insertar Evento">
+  <main class="page public-home">
+    <section class="home-card">
+      <div class="home-content">
+        <a href="/" class="btn secondary">Volver</a>
+
+        <div class="brand-row">
+          <div class="brand-icon">
+            <img src="/logo.png" alt="Casino Moments" />
+          </div>
+          <div>
+            <p class="eyebrow">Casino Moments</p>
+            <h1>Admin</h1>
+          </div>
+        </div>
+
+        <div class="intro-copy">
+          <span class="gold-line"></span>
+          <h2>Insertar código de fiesta</h2>
+          <p>Da de alta el nombre, código, fecha del evento y salón.</p>
+        </div>
+
+        <form class="form" id="formInsertar">
+          <label class="field">
+            <span>Nombre completo</span>
+            <input class="input" id="nombreCompleto" name="nombre_completo" type="text" placeholder="Nombre completo" required />
+          </label>
+
+          <label class="field">
+            <span>Código de fiesta</span>
+            <input class="input code-input" id="codigo" name="codigo" type="text" placeholder="CM-8F4K2" required />
+          </label>
+
+          <label class="field">
+            <span>Fecha del evento</span>
+            <input class="input" id="fechaEvento" name="fecha_evento" type="date" required />
+          </label>
+
+          <label class="field">
+            <span>Nombre del salón</span>
+            <input class="input" id="nombreSalon" name="nombre_salon" type="text" placeholder="Nombre del salón" required />
+          </label>
+
+          <button class="btn full" id="btnGuardarEvento" type="submit">Guardar código</button>
+          <div class="message hidden" id="msgInsertar"></div>
+        </form>
+      </div>
+
+      <aside class="home-visual">
+        <div class="visual-glow"></div>
+        <div class="logo-frame">
+          <img src="/logo.png" alt="Casino Moments" />
+        </div>
+        <div class="visual-text">
+          <p>Administración de códigos</p>
+          <strong>Casino Moments</strong>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    // @ts-nocheck
+    const formInsertar = document.querySelector("#formInsertar");
+    const msgInsertar = document.querySelector("#msgInsertar");
+    const btnGuardarEvento = document.querySelector("#btnGuardarEvento");
+    const codigoInput = document.querySelector("#codigo");
+
+    function setMessage(element, text, type = "") {
+      element.textContent = text;
+      element.className = `message ${type}`;
+      element.classList.toggle("hidden", !text);
+    }
+
+    function cleanCode(value) {
+      return String(value || "").trim().toUpperCase().replace(/\s+/g, "");
+    }
+
+    function restaurarBoton() {
+      btnGuardarEvento.disabled = false;
+      btnGuardarEvento.textContent = "Guardar código";
+    }
+
+    async function leerJson(response) {
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error("La API no regresó JSON. Revisa que /api/fiestas esté funcionando.");
+      }
+
+      return await response.json();
+    }
+
+    codigoInput.addEventListener("input", () => {
+      codigoInput.value = cleanCode(codigoInput.value);
+    });
+
+    formInsertar.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      setMessage(msgInsertar, "Guardando...", "");
+      btnGuardarEvento.disabled = true;
+      btnGuardarEvento.textContent = "Guardando...";
+
+      const formData = new FormData(formInsertar);
+
+      const payload = {
+        accion: "insertar_evento",
+        nombre_completo: String(formData.get("nombre_completo") || "").trim(),
+        codigo: cleanCode(formData.get("codigo")),
+        fecha_evento: String(formData.get("fecha_evento") || "").trim(),
+        nombre_salon: String(formData.get("nombre_salon") || "").trim()
+      };
+
+      if (!payload.nombre_completo || !payload.codigo || !payload.fecha_evento || !payload.nombre_salon) {
+        setMessage(msgInsertar, "Llena todos los campos", "error");
+        restaurarBoton();
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/fiestas", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await leerJson(response);
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.message || "No se pudo guardar el código");
+        }
+
+        formInsertar.reset();
+        setMessage(msgInsertar, result.message || "Código guardado correctamente", "success");
+      } catch (error) {
+        const mensaje = error instanceof Error ? error.message : "Ocurrió un error inesperado";
+        setMessage(msgInsertar, mensaje, "error");
+      } finally {
+        restaurarBoton();
+      }
+    });
+  </script>
+</BaseLayout>

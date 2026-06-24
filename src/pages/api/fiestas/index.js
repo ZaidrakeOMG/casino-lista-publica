@@ -7,6 +7,10 @@ function limpiarTexto(valor) {
   return String(valor || "").trim();
 }
 
+function limpiarCodigo(valor) {
+  return String(valor || "").trim().toUpperCase().replace(/\s+/g, "");
+}
+
 function generarCodigoFiesta() {
   const caracteres = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let codigo = "CM-";
@@ -40,6 +44,38 @@ async function crearCodigoUnico() {
   throw new Error("No se pudo generar un ID único. Intenta de nuevo.");
 }
 
+async function insertarEvento(body) {
+  const nombreCompleto = limpiarTexto(body.nombre_completo);
+  const codigo = limpiarCodigo(body.codigo);
+  const fechaEvento = limpiarTexto(body.fecha_evento);
+  const nombreSalon = limpiarTexto(body.nombre_salon);
+
+  if (!nombreCompleto || !codigo || !fechaEvento || !nombreSalon) {
+    return jsonResponse({ ok: false, message: "Llena todos los campos" }, 400);
+  }
+
+  const { data, error } = await supabase
+    .from("fiestas_eventos")
+    .insert({
+      nombre_completo: nombreCompleto,
+      codigo,
+      fecha_evento: fechaEvento,
+      nombre_salon: nombreSalon
+    })
+    .select("id, codigo, nombre_completo, fecha_evento, nombre_salon, created_at")
+    .maybeSingle();
+
+  if (error) {
+    return jsonResponse({ ok: false, message: error.message }, 500);
+  }
+
+  return jsonResponse({
+    ok: true,
+    message: "Código guardado correctamente",
+    evento: data
+  });
+}
+
 export async function POST({ request }) {
   let body;
 
@@ -49,6 +85,20 @@ export async function POST({ request }) {
     return jsonResponse({ ok: false, message: "Solicitud inválida" }, 400);
   }
 
+  /*
+    NUEVO:
+    Si insertar.astro manda accion: "insertar_evento",
+    guarda en la tabla fiestas_eventos.
+    Esto NO afecta la creación normal de fiestas.
+  */
+  if (body.accion === "insertar_evento") {
+    return insertarEvento(body);
+  }
+
+  /*
+    PROCESO ORIGINAL:
+    Crear fiesta normal.
+  */
   const usaMesas = Boolean(body.usa_mesas);
   const adminCode = limpiarTexto(body.admin_mesas_code || body.admin_code);
   const cantidadMesas = Number(body.cantidad_mesas || 0);
